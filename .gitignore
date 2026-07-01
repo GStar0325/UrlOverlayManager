@@ -1,0 +1,15 @@
+.vs/
+bin/
+obj/
+dist/
+
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+TestResults/
+*.nupkg
+*.snupkg
+
+*.log
