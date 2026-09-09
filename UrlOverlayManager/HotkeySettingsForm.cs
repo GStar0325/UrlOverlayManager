@@ -17,99 +17,118 @@ namespace UrlOverlayManager
         public HotkeySettingsForm(HotkeySettings settings)
         {
             Result = settings.Clone();
-
-            Text = "단축키 설정";
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            ClientSize = new Size(500, 276);
-            BackColor = Color.FromArgb(30, 30, 30);
-            ForeColor = Color.White;
-
-            InitControls();
+            InitializeForm();
+            BuildLayout();
+            UiChrome.Apply(this, "단축키 설정", false);
             LoadValues(Result);
         }
 
-        private void InitControls()
+        private void InitializeForm()
         {
-            TableLayoutPanel layout = new TableLayoutPanel();
-            layout.Dock = DockStyle.Fill;
-            layout.Padding = new Padding(16);
-            layout.ColumnCount = 2;
-            layout.RowCount = 7;
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            Text = "단축키 설정";
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.None;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(560, 330);
+            BackColor = UiTheme.AppBackColor;
+            ForeColor = UiTheme.TextColor;
+            Font = UiTheme.RegularFont();
+        }
 
-            AddRow(layout, 0, "전체 표시/숨김", txtToggleOverlays);
-            AddRow(layout, 1, "편집 모드", txtEditMode);
-            AddRow(layout, 2, "클릭 무시 토글", txtToggleClickThrough);
-            AddRow(layout, 3, "현재 화면으로 모으기", txtMoveToCurrentScreen);
+        private void BuildLayout()
+        {
+            TableLayoutPanel root = new TableLayoutPanel();
+            root.Dock = DockStyle.Fill;
+            root.Padding = new Padding(22);
+            root.ColumnCount = 1;
+            root.RowCount = 4;
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 
-            Label hintLabel = new Label();
-            hintLabel.Text = "입력칸 선택 후 원하는 조합을 누르세요. Backspace, Delete, Esc는 사용 안 함입니다.";
-            hintLabel.AutoSize = false;
-            hintLabel.Height = 34;
-            hintLabel.TextAlign = ContentAlignment.MiddleLeft;
-            hintLabel.ForeColor = Color.FromArgb(210, 210, 210);
-            layout.Controls.Add(hintLabel, 0, 4);
-            layout.SetColumnSpan(hintLabel, 2);
+            Label title = new Label();
+            title.Text = "단축키 설정";
+            title.Dock = DockStyle.Fill;
+            title.Font = UiTheme.BoldFont(17F);
+            title.TextAlign = ContentAlignment.MiddleLeft;
 
-            Button recommendedButton = CreateButton("추천값 채우기", 116);
-            recommendedButton.Click += (s, e) => LoadValues(HotkeySettings.CreateRecommended());
-            layout.Controls.Add(recommendedButton, 1, 5);
+            TableLayoutPanel fields = new TableLayoutPanel();
+            fields.Dock = DockStyle.Fill;
+            fields.BackColor = UiTheme.PanelBackColor;
+            fields.Padding = new Padding(18);
+            fields.ColumnCount = 2;
+            fields.RowCount = 4;
+            fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
+            fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+            AddRow(fields, 0, "전체 표시/숨김", txtToggleOverlays);
+            AddRow(fields, 1, "편집 모드", txtEditMode);
+            AddRow(fields, 2, "클릭 무시 전환", txtToggleClickThrough);
+            AddRow(fields, 3, "현재 화면으로 모으기", txtMoveToCurrentScreen);
+
+            Label hint = new Label();
+            hint.Text = "입력 칸을 선택한 뒤 원하는 키 조합을 누르세요. Backspace, Delete, Esc는 단축키를 비웁니다.";
+            hint.Dock = DockStyle.Fill;
+            hint.ForeColor = UiTheme.MutedTextColor;
+            hint.TextAlign = ContentAlignment.MiddleLeft;
 
             FlowLayoutPanel buttons = new FlowLayoutPanel();
-            buttons.FlowDirection = FlowDirection.RightToLeft;
             buttons.Dock = DockStyle.Fill;
+            buttons.FlowDirection = FlowDirection.RightToLeft;
+            buttons.WrapContents = false;
 
-            Button okButton = CreateButton("확인", 86);
+            Button okButton = CreateButton("확인", 92, UiTheme.AccentColor, Color.White);
             okButton.Click += OkButton_Click;
 
-            Button cancelButton = CreateButton("취소", 86);
+            Button cancelButton = CreateButton("취소", 92, UiTheme.PanelBackColor, UiTheme.TextColor);
             cancelButton.Click += (s, e) =>
             {
                 DialogResult = DialogResult.Cancel;
                 Close();
             };
 
+            Button recommendedButton = CreateButton("추천값 적용", 116, UiTheme.PanelBackColor, UiTheme.TextColor);
+            recommendedButton.Click += (s, e) => LoadValues(HotkeySettings.CreateRecommended());
+
             buttons.Controls.Add(okButton);
             buttons.Controls.Add(cancelButton);
-            layout.Controls.Add(buttons, 0, 6);
-            layout.SetColumnSpan(buttons, 2);
+            buttons.Controls.Add(recommendedButton);
 
-            Controls.Add(layout);
+            root.Controls.Add(title, 0, 0);
+            root.Controls.Add(fields, 0, 1);
+            root.Controls.Add(hint, 0, 2);
+            root.Controls.Add(buttons, 0, 3);
+
+            Controls.Add(root);
         }
 
         private static void AddRow(TableLayoutPanel layout, int row, string labelText, HotkeyTextBox textBox)
         {
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+
             Label label = new Label();
             label.Text = labelText;
-            label.AutoSize = false;
-            label.TextAlign = ContentAlignment.MiddleLeft;
             label.Dock = DockStyle.Fill;
+            label.TextAlign = ContentAlignment.MiddleLeft;
+            label.ForeColor = UiTheme.TextColor;
 
             textBox.Dock = DockStyle.Fill;
             textBox.ReadOnly = true;
-            textBox.BackColor = Color.FromArgb(45, 45, 48);
-            textBox.ForeColor = Color.White;
-            textBox.BorderStyle = BorderStyle.FixedSingle;
+            UiTheme.StyleTextBox(textBox);
 
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             layout.Controls.Add(label, 0, row);
             layout.Controls.Add(textBox, 1, row);
         }
 
-        private static Button CreateButton(string text, int width)
+        private static Button CreateButton(string text, int width, Color backColor, Color foreColor)
         {
             Button button = new Button();
             button.Text = text;
             button.Width = width;
-            button.Height = 30;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 0;
-            button.BackColor = Color.FromArgb(58, 122, 254);
-            button.ForeColor = Color.White;
+            button.Margin = new Padding(8, 0, 0, 0);
+            UiTheme.StyleButton(button, backColor, foreColor);
             return button;
         }
 
@@ -132,7 +151,7 @@ namespace UrlOverlayManager
 
             if (!string.IsNullOrWhiteSpace(duplicateMessage))
             {
-                MessageBox.Show(duplicateMessage);
+                MessageBox.Show(this, duplicateMessage, "단축키 중복");
                 return;
             }
 
@@ -146,7 +165,7 @@ namespace UrlOverlayManager
             {
                 ("전체 표시/숨김", settings.ToggleOverlays),
                 ("편집 모드", settings.EditMode),
-                ("클릭 무시 토글", settings.ToggleClickThrough),
+                ("클릭 무시 전환", settings.ToggleClickThrough),
                 ("현재 화면으로 모으기", settings.MoveToCurrentScreen)
             };
 

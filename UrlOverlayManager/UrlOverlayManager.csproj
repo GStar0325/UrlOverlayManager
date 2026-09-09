@@ -16,12 +16,33 @@
   <ItemGroup>
     <Content Include="Assets\AppIcon.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </Content>
+    <Content Include="Assets\Mabinogi_Classic_TTF.ttf">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Assets\Mabinogi_Classic_OTF.otf">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Mabinogi_Classic_TTF.ttf">
+      <LogicalName>UrlOverlayManager.Assets.Mabinogi_Classic_TTF.ttf</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <Target Name="RemoveUnusedWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>
       <Reference Remove="@(Reference)" Condition="$([System.String]::Copy('%(Reference.Filename)').Equals('Microsoft.Web.WebView2.Wpf'))" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="RemoveXmlDocsFromPublish" BeforeTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Extension)' == '.xml'" />
     </ItemGroup>
   </Target>
 

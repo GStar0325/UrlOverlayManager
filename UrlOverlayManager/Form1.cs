@@ -10,11 +10,28 @@ namespace UrlOverlayManager
 {
     public partial class Form1 : Form
     {
+        private const int CommandButtonHeight = 28;
+        private const int CommandButtonRowHeight = 34;
+        private const int CommandSectionTitleHeight = 22;
+
         private const int WM_HOTKEY = 0x0312;
         private const int HOTKEY_TOGGLE_OVERLAYS = 100;
         private const int HOTKEY_EDIT_MODE = 101;
         private const int HOTKEY_TOGGLE_CLICK_THROUGH = 102;
         private const int HOTKEY_MOVE_TO_CURRENT_SCREEN = 103;
+        private const int TITLE_BAR_HEIGHT = 60;
+        private const int CONTENT_MARGIN = 18;
+        private const int RESIZE_HANDLE_SIZE = 8;
+        private const int WM_NCHITTEST = 0x0084;
+        private const int HTCLIENT = 1;
+        private const int HTLEFT = 10;
+        private const int HTRIGHT = 11;
+        private const int HTTOP = 12;
+        private const int HTTOPLEFT = 13;
+        private const int HTTOPRIGHT = 14;
+        private const int HTBOTTOM = 15;
+        private const int HTBOTTOMLEFT = 16;
+        private const int HTBOTTOMRIGHT = 17;
 
         private const uint MOD_ALT = 0x0001;
         private const uint MOD_CONTROL = 0x0002;
@@ -26,6 +43,7 @@ namespace UrlOverlayManager
         private readonly Dictionary<Guid, OverlayForm> overlayForms = new Dictionary<Guid, OverlayForm>();
         private readonly string configPath = GetConfigPath();
         private readonly string legacyConfigPath = Path.Combine(Application.StartupPath, "overlay-config.json");
+        private readonly bool hostedMode;
 
         private List<OverlayItemConfig> items = new List<OverlayItemConfig>();
         private HotkeySettings hotkeys = HotkeySettings.CreateDefault();
@@ -33,17 +51,30 @@ namespace UrlOverlayManager
         private OverlayItemConfig? selectedItem;
         private NotifyIcon? trayIcon;
         private ContextMenuStrip? trayMenu;
+        private Panel? titleBar;
+        private Label? titleLabel;
+        private Button? btnTitleMinimize;
+        private Button? btnTitleClose;
+        private Button? btnPresets;
+        private Button? btnHotkeys;
+        private Button? btnRecover;
+        private Button? btnAddClock;
+        private TableLayoutPanel? managerLayout;
+        private TableLayoutPanel? listSection;
+        private TableLayoutPanel? editorSection;
+        private readonly bool useTrayIntegration;
+        private readonly bool preserveOverlaysOnClose;
         private bool isLoadingItem;
         private bool isRefreshingGrid;
         private bool isRealExit;
         private bool hotkeysRegistered;
 
-        private static readonly Color AppBackColor = Color.FromArgb(244, 250, 253);
-        private static readonly Color PanelBackColor = Color.FromArgb(232, 244, 250);
-        private static readonly Color FieldBackColor = Color.White;
-        private static readonly Color TextColor = Color.FromArgb(38, 66, 82);
-        private static readonly Color AccentColor = Color.FromArgb(116, 174, 207);
-        private static readonly Color AccentDarkColor = Color.FromArgb(80, 139, 174);
+        private static Color AppBackColor => UiTheme.AppBackColor;
+        private static Color PanelBackColor => UiTheme.PanelBackColor;
+        private static Color FieldBackColor => UiTheme.FieldBackColor;
+        private static Color TextColor => UiTheme.TextColor;
+        private static Color AccentColor => UiTheme.AccentColor;
+        private static Color AccentDarkColor => UiTheme.AccentDarkColor;
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -51,8 +82,21 @@ namespace UrlOverlayManager
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        public Form1()
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
+        public Form1(bool useTrayIntegration = true, bool preserveOverlaysOnClose = false, bool hostedMode = false)
         {
+            this.useTrayIntegration = useTrayIntegration;
+            this.preserveOverlaysOnClose = preserveOverlaysOnClose;
+            this.hostedMode = hostedMode;
+
             InitializeComponent();
 
             InitGrid();
@@ -66,11 +110,24 @@ namespace UrlOverlayManager
 
             InitEditorEvents();
             ShowVisibleOverlays();
-            InitTrayIcon();
+            if (useTrayIntegration)
+            {
+                InitTrayIcon();
+            }
 
             Resize += Form1_Resize;
 
+            if (!hostedMode)
+            {
+                InitTitleBar();
+            }
+
             AddMainActionButtons();
+            ApplyModernDesign();
+        }
+
+        public void ApplyCurrentUiSettings()
+        {
             ApplyModernDesign();
         }
 
@@ -95,23 +152,53 @@ namespace UrlOverlayManager
             }
 
             base.WndProc(ref m);
+
+            if (!hostedMode && m.Msg == WM_NCHITTEST && m.Result.ToInt32() == HTCLIENT)
+            {
+                m.Result = new IntPtr(GetResizeHitTestResult(m.LParam));
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            if (hostedMode)
+                return;
+
+            using Pen borderPen = new Pen(UiTheme.BorderColor);
+            Rectangle border = new Rectangle(0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+            e.Graphics.DrawRectangle(borderPen, border);
         }
 
         private void ApplyModernDesign()
         {
-            Text = "URL Overlay Manager";
+            SetStyle(ControlStyles.ResizeRedraw, true);
+            Text = "오버레이 관리";
+            FormBorderStyle = FormBorderStyle.None;
             BackColor = AppBackColor;
             ForeColor = TextColor;
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(550, 300);
+
+            if (!hostedMode)
+            {
+                ClientSize = new Size(760, 560);
+                MinimumSize = new Size(720, 540);
+            }
+
             LoadAppIcon();
+            LayoutTitleBar();
+            EnsureManagerLayout();
+            LayoutMainControls();
 
             ApplyControlStyle(this);
+            UiTheme.ApplyFonts(this);
 
             if (btnDelete != null)
             {
-                btnDelete.BackColor = Color.FromArgb(214, 112, 112);
+                btnDelete.BackColor = UiTheme.DangerColor;
             }
+
         }
 
         private void LoadAppIcon()
@@ -140,20 +227,337 @@ namespace UrlOverlayManager
             }
         }
 
+        private void InitTitleBar()
+        {
+            titleBar = new Panel();
+            titleBar.Height = TITLE_BAR_HEIGHT;
+            titleBar.BackColor = PanelBackColor;
+            titleBar.MouseDown += TitleBar_MouseDown;
+
+            titleLabel = new Label();
+            titleLabel.Text = "오버레이 관리";
+            titleLabel.AutoSize = false;
+            titleLabel.TextAlign = ContentAlignment.MiddleLeft;
+            titleLabel.ForeColor = TextColor;
+            titleLabel.Font = UiTheme.BoldFont(13F);
+            titleLabel.MouseDown += TitleBar_MouseDown;
+
+            btnTitleMinimize = CreateTitleButton("_");
+            btnTitleMinimize.Click += (s, e) =>
+            {
+                WindowState = FormWindowState.Minimized;
+            };
+
+            btnTitleClose = CreateTitleButton("X");
+            btnTitleClose.Click += (s, e) =>
+            {
+                Close();
+            };
+
+            titleBar.Controls.Add(titleLabel);
+            titleBar.Controls.Add(btnTitleMinimize);
+            titleBar.Controls.Add(btnTitleClose);
+            Controls.Add(titleBar);
+            titleBar.BringToFront();
+        }
+
+        private static Button CreateTitleButton(string text)
+        {
+            Button button = new Button();
+            button.Text = text;
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 0;
+            button.BackColor = Color.Transparent;
+            button.ForeColor = UiTheme.TextColor;
+            button.Font = UiTheme.BoldFont();
+            button.Cursor = Cursors.Hand;
+            return button;
+        }
+
+        private void LayoutTitleBar()
+        {
+            if (titleBar == null || titleLabel == null || btnTitleMinimize == null || btnTitleClose == null)
+                return;
+
+            titleBar.Location = new Point(0, 0);
+            titleBar.Size = new Size(ClientSize.Width, TITLE_BAR_HEIGHT);
+            titleBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            btnTitleClose.Size = new Size(44, TITLE_BAR_HEIGHT);
+            btnTitleClose.Location = new Point(ClientSize.Width - 44, 0);
+            btnTitleClose.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+            btnTitleMinimize.Size = new Size(44, TITLE_BAR_HEIGHT);
+            btnTitleMinimize.Location = new Point(ClientSize.Width - 88, 0);
+            btnTitleMinimize.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+            titleLabel.Location = new Point(20, 0);
+            titleLabel.Size = new Size(ClientSize.Width - 116, TITLE_BAR_HEIGHT);
+            titleLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        }
+
+        private void TitleBar_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            ReleaseCapture();
+            SendMessage(Handle, 0xA1, 0x2, 0);
+        }
+
+        private int GetResizeHitTestResult(IntPtr lParam)
+        {
+            int x = unchecked((short)(long)lParam);
+            int y = unchecked((short)((long)lParam >> 16));
+            Point cursor = PointToClient(new Point(x, y));
+
+            bool left = cursor.X <= RESIZE_HANDLE_SIZE;
+            bool right = cursor.X >= ClientSize.Width - RESIZE_HANDLE_SIZE;
+            bool top = cursor.Y <= RESIZE_HANDLE_SIZE;
+            bool bottom = cursor.Y >= ClientSize.Height - RESIZE_HANDLE_SIZE;
+
+            if (left && top)
+                return HTTOPLEFT;
+            if (right && top)
+                return HTTOPRIGHT;
+            if (left && bottom)
+                return HTBOTTOMLEFT;
+            if (right && bottom)
+                return HTBOTTOMRIGHT;
+            if (left)
+                return HTLEFT;
+            if (right)
+                return HTRIGHT;
+            if (top)
+                return HTTOP;
+            if (bottom)
+                return HTBOTTOM;
+
+            return HTCLIENT;
+        }
+
         private void AddMainActionButtons()
         {
-            Button presetsButton = CreateMainActionButton("프리셋", 12, 194, 94);
-            presetsButton.Click += (s, e) => ShowPresetManager();
+            int actionTop = TITLE_BAR_HEIGHT + CONTENT_MARGIN + 302;
 
-            Button hotkeysButton = CreateMainActionButton("단축키", 112, 194, 94);
-            hotkeysButton.Click += (s, e) => ShowHotkeySettings();
+            btnPresets = CreateMainActionButton("프리셋", CONTENT_MARGIN, actionTop, 96);
+            btnPresets.Click += (s, e) => ShowPresetManager();
 
-            Button recoverButton = CreateMainActionButton("화면으로 모으기", 212, 194, 140);
-            recoverButton.Click += (s, e) => MoveOverlaysToCurrentScreen();
+            btnHotkeys = CreateMainActionButton("단축키", CONTENT_MARGIN + 104, actionTop, 96);
+            btnHotkeys.Click += (s, e) => ShowHotkeySettings();
 
-            Controls.Add(presetsButton);
-            Controls.Add(hotkeysButton);
-            Controls.Add(recoverButton);
+            btnRecover = CreateMainActionButton("화면으로 모으기", CONTENT_MARGIN + 208, actionTop, 140);
+            btnRecover.Click += (s, e) => MoveOverlaysToCurrentScreen();
+
+            btnAddClock = CreateMainActionButton("시계 추가", CONTENT_MARGIN + 356, actionTop, 96);
+            btnAddClock.Click += (s, e) => AddClockOverlay();
+
+            Controls.Add(btnPresets);
+            Controls.Add(btnHotkeys);
+            Controls.Add(btnRecover);
+            Controls.Add(btnAddClock);
+        }
+
+        private void EnsureManagerLayout()
+        {
+            if (managerLayout != null)
+                return;
+
+            managerLayout = new TableLayoutPanel();
+            managerLayout.ColumnCount = 1;
+            managerLayout.RowCount = 2;
+            managerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            managerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
+            managerLayout.BackColor = AppBackColor;
+
+            listSection = CreatePanelSection("오버레이 목록");
+            editorSection = CreatePanelSection("선택 항목");
+
+            Reparent(dgvItems, listSection, 0, 1);
+
+            TableLayoutPanel workArea = new TableLayoutPanel();
+            workArea.Dock = DockStyle.Fill;
+            workArea.ColumnCount = 2;
+            workArea.RowCount = 1;
+            workArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            workArea.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 224));
+            workArea.BackColor = AppBackColor;
+            workArea.Controls.Add(listSection, 0, 0);
+            workArea.Controls.Add(CreateManagerCommandPanel(), 1, 0);
+
+            BuildEditorSection();
+
+            managerLayout.Controls.Add(workArea, 0, 0);
+            managerLayout.Controls.Add(editorSection, 0, 1);
+            Controls.Add(managerLayout);
+            managerLayout.SendToBack();
+        }
+
+        private Control CreateManagerCommandPanel()
+        {
+            TableLayoutPanel panel = new TableLayoutPanel();
+            panel.Dock = DockStyle.Fill;
+            panel.ColumnCount = 1;
+            panel.RowCount = 3;
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 184));
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            panel.BackColor = UiTheme.AppBackColor;
+            panel.Margin = new Padding(8, 0, 0, 6);
+
+            TableLayoutPanel editSection = CreateCommandSection("관리", 3);
+            Reparent(btnAdd, editSection, 0, 1);
+            Reparent(btnDelete, editSection, 0, 2);
+
+            TableLayoutPanel toolSection = CreateCommandSection("도구", 5);
+            ReparentIfPresent(btnPresets, toolSection, 0, 1);
+            ReparentIfPresent(btnHotkeys, toolSection, 0, 2);
+            ReparentIfPresent(btnRecover, toolSection, 0, 3);
+            ReparentIfPresent(btnAddClock, toolSection, 0, 4);
+
+            panel.Controls.Add(editSection, 0, 0);
+            panel.Controls.Add(toolSection, 0, 1);
+            return panel;
+        }
+
+        private static TableLayoutPanel CreateCommandSection(string titleText, int rowCount)
+        {
+            TableLayoutPanel section = new TableLayoutPanel();
+            section.Dock = DockStyle.Fill;
+            section.ColumnCount = 1;
+            section.RowCount = rowCount;
+            section.RowStyles.Add(new RowStyle(SizeType.Absolute, CommandSectionTitleHeight));
+            for (int i = 1; i < rowCount; i++)
+            {
+                section.RowStyles.Add(new RowStyle(SizeType.Absolute, CommandButtonRowHeight));
+            }
+
+            section.Padding = new Padding(8, 6, 8, 8);
+            section.Margin = new Padding(0, 0, 0, 8);
+            section.BackColor = UiTheme.PanelBackColor;
+            section.Paint += (s, e) =>
+            {
+                ControlPaint.DrawBorder(e.Graphics, section.ClientRectangle, UiTheme.BorderColor, ButtonBorderStyle.Solid);
+            };
+
+            Label title = new Label();
+            title.Dock = DockStyle.Fill;
+            title.Text = titleText;
+            title.TextAlign = ContentAlignment.MiddleLeft;
+            title.ForeColor = UiTheme.TextColor;
+            title.Font = UiTheme.BoldFont(10F);
+            section.Controls.Add(title, 0, 0);
+            return section;
+        }
+
+        private static TableLayoutPanel CreatePanelSection(string titleText)
+        {
+            TableLayoutPanel section = new TableLayoutPanel();
+            section.Dock = DockStyle.Fill;
+            section.ColumnCount = 1;
+            section.RowCount = 2;
+            section.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+            section.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            section.Padding = new Padding(6, 4, 6, 6);
+            section.BackColor = UiTheme.PanelBackColor;
+            section.CellBorderStyle = TableLayoutPanelCellBorderStyle.None;
+            section.Margin = new Padding(0, 0, 0, 6);
+            section.Paint += (s, e) =>
+            {
+                ControlPaint.DrawBorder(
+                    e.Graphics,
+                    section.ClientRectangle,
+                    UiTheme.BorderColor,
+                    ButtonBorderStyle.Solid);
+            };
+
+            Label title = new Label();
+            title.Dock = DockStyle.Fill;
+            title.Text = titleText;
+            title.TextAlign = ContentAlignment.MiddleLeft;
+            title.ForeColor = UiTheme.TextColor;
+            title.Font = UiTheme.BoldFont(10F);
+
+            section.Controls.Add(title, 0, 0);
+            return section;
+        }
+
+        private static FlowLayoutPanel CreateActionRow(FlowDirection flowDirection)
+        {
+            return new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = flowDirection,
+                WrapContents = false,
+                AutoScroll = false,
+                Padding = new Padding(0, 2, 0, 0),
+                Margin = Padding.Empty,
+                BackColor = UiTheme.AppBackColor
+            };
+        }
+
+        private static void Reparent(Control control, Control parent)
+        {
+            control.Parent?.Controls.Remove(control);
+            parent.Controls.Add(control);
+        }
+
+        private static void ReparentIfPresent(Control? control, Control parent)
+        {
+            if (control == null)
+                return;
+
+            Reparent(control, parent);
+        }
+
+        private static void ReparentIfPresent(Control? control, TableLayoutPanel parent, int column, int row)
+        {
+            if (control == null)
+                return;
+
+            Reparent(control, parent, column, row);
+        }
+
+        private static void Reparent(Control control, TableLayoutPanel parent, int column, int row)
+        {
+            control.Parent?.Controls.Remove(control);
+            parent.Controls.Add(control, column, row);
+        }
+
+        private void BuildEditorSection()
+        {
+            if (editorSection == null)
+                return;
+
+            TableLayoutPanel editorGrid = new TableLayoutPanel();
+            editorGrid.Dock = DockStyle.Fill;
+            editorGrid.ColumnCount = 8;
+            editorGrid.RowCount = 2;
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 24));
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 54));
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+            editorGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            editorGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            editorGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            editorGrid.BackColor = UiTheme.PanelBackColor;
+
+            Reparent(name, editorGrid, 0, 0);
+            Reparent(txtName, editorGrid, 1, 0);
+            Reparent(chkEnabled, editorGrid, 2, 0);
+
+            Reparent(opacity, editorGrid, 5, 0);
+            Reparent(numOpacity, editorGrid, 6, 0);
+            Reparent(chkClickThrough, editorGrid, 7, 0);
+
+            Reparent(url, editorGrid, 0, 1);
+            Reparent(txtUrl, editorGrid, 1, 1);
+            editorGrid.SetColumnSpan(txtUrl, 3);
+
+            editorSection.Controls.Add(editorGrid, 0, 1);
         }
 
         private static Button CreateMainActionButton(string text, int x, int y, int width)
@@ -166,6 +570,133 @@ namespace UrlOverlayManager
             return button;
         }
 
+        private void LayoutMainControls()
+        {
+            int top = (hostedMode ? 0 : TITLE_BAR_HEIGHT) + CONTENT_MARGIN;
+            int left = CONTENT_MARGIN;
+            int width = ClientSize.Width - CONTENT_MARGIN * 2;
+
+            if (managerLayout != null)
+            {
+                int hostedMargin = hostedMode ? 10 : CONTENT_MARGIN;
+                int contentLeft = hostedMode ? 12 : left;
+                int contentTop = hostedMode ? 10 : top;
+                int contentWidth = ClientSize.Width - contentLeft * 2;
+                managerLayout.Location = new Point(contentLeft, contentTop);
+                managerLayout.Size = new Size(contentWidth, ClientSize.Height - contentTop - hostedMargin);
+                managerLayout.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+
+                dgvItems.Dock = DockStyle.Fill;
+                dgvItems.Margin = Padding.Empty;
+
+                SetActionButtonLayout(btnPresets, 96);
+                SetActionButtonLayout(btnHotkeys, 96);
+                SetActionButtonLayout(btnRecover, 140);
+                SetActionButtonLayout(btnAddClock, 96);
+                SetActionButtonLayout(btnAdd, 76);
+                SetActionButtonLayout(btnDelete, 78);
+
+                SetEditorLabelLayout(name);
+                SetEditorLabelLayout(url);
+                SetEditorLabelLayout(opacity);
+
+                txtName.Dock = DockStyle.Fill;
+                txtName.Margin = new Padding(0, 3, 10, 3);
+                txtUrl.Dock = DockStyle.Fill;
+                txtUrl.Margin = new Padding(0, 3, 10, 3);
+                numOpacity.Dock = DockStyle.Fill;
+                numOpacity.Margin = new Padding(0, 3, 10, 3);
+
+                chkEnabled.Dock = DockStyle.Fill;
+                chkEnabled.Margin = new Padding(0, 4, 12, 2);
+                chkClickThrough.Dock = DockStyle.Fill;
+                chkClickThrough.Margin = new Padding(0, 4, 0, 2);
+                return;
+            }
+
+            dgvItems.Location = new Point(left, top);
+            dgvItems.Size = new Size(width, 260);
+            dgvItems.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            int actionTop = top + 302;
+
+            if (btnPresets != null)
+            {
+                btnPresets.Location = new Point(left, actionTop);
+                btnPresets.Size = new Size(96, 32);
+                btnPresets.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            }
+
+            if (btnHotkeys != null)
+            {
+                btnHotkeys.Location = new Point(left + 104, actionTop);
+                btnHotkeys.Size = new Size(96, 32);
+                btnHotkeys.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            }
+
+            if (btnRecover != null)
+            {
+                btnRecover.Location = new Point(left + 208, actionTop);
+                btnRecover.Size = new Size(140, 32);
+                btnRecover.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            }
+
+            if (btnAddClock != null)
+            {
+                btnAddClock.Location = new Point(left + 356, actionTop);
+                btnAddClock.Size = new Size(96, 32);
+                btnAddClock.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            }
+
+            btnAdd.Location = new Point(ClientSize.Width - 178, actionTop);
+            btnAdd.Size = new Size(76, 32);
+            btnAdd.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+            btnDelete.Location = new Point(ClientSize.Width - 96, actionTop);
+            btnDelete.Size = new Size(78, 32);
+            btnDelete.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+            name.Location = new Point(left + 2, top + 274);
+            name.Size = new Size(70, 24);
+            txtName.Location = new Point(left + 78, top + 274);
+            txtName.Size = new Size(240, 24);
+
+            url.Location = new Point(left + 2, top + 354);
+            url.Size = new Size(70, 24);
+            txtUrl.Location = new Point(left + 78, top + 354);
+            txtUrl.Size = new Size(ClientSize.Width - (left + 78) - CONTENT_MARGIN, 24);
+            txtUrl.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            opacity.Location = new Point(left + 2, top + 396);
+            opacity.Size = new Size(70, 24);
+            numOpacity.Location = new Point(left + 78, top + 396);
+            numOpacity.Size = new Size(120, 24);
+
+            chkEnabled.Location = new Point(left + 354, top + 274);
+            chkEnabled.Size = new Size(130, 24);
+            chkClickThrough.Location = new Point(left + 354, top + 396);
+            chkClickThrough.Size = new Size(110, 24);
+        }
+
+        private static void SetActionButtonLayout(Button? button, int width)
+        {
+            if (button == null)
+                return;
+
+            button.Width = width;
+            button.Height = CommandButtonHeight;
+            button.Dock = DockStyle.Fill;
+            button.Margin = new Padding(0, 2, 0, 4);
+            button.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        }
+
+        private static void SetEditorLabelLayout(Label label)
+        {
+            label.Dock = DockStyle.Fill;
+            label.Margin = Padding.Empty;
+            label.TextAlign = ContentAlignment.MiddleLeft;
+        }
+
         private void ApplyControlStyle(Control parent)
         {
             foreach (Control control in parent.Controls)
@@ -173,35 +704,24 @@ namespace UrlOverlayManager
                 if (control is Label)
                 {
                     control.ForeColor = TextColor;
-                    control.Font = new Font("맑은 고딕", 9F, FontStyle.Regular);
+                    control.Font = UiTheme.RegularFont();
                 }
                 else if (control is TextBox textBox)
                 {
-                    textBox.BackColor = FieldBackColor;
-                    textBox.ForeColor = TextColor;
-                    textBox.BorderStyle = BorderStyle.FixedSingle;
-                    textBox.Font = new Font("맑은 고딕", 9F);
+                    UiTheme.StyleTextBox(textBox);
                 }
                 else if (control is Button button)
                 {
-                    button.FlatStyle = FlatStyle.Flat;
-                    button.FlatAppearance.BorderSize = 0;
-                    button.BackColor = AccentColor;
-                    button.ForeColor = Color.White;
-                    button.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
-                    button.Height = 32;
-                    button.Cursor = Cursors.Hand;
+                    UiTheme.StyleButton(button, AccentColor, Color.White);
                 }
                 else if (control is CheckBox checkBox)
                 {
                     checkBox.ForeColor = TextColor;
-                    checkBox.Font = new Font("맑은 고딕", 9F);
+                    checkBox.Font = UiTheme.RegularFont();
                 }
                 else if (control is NumericUpDown numeric)
                 {
-                    numeric.BackColor = FieldBackColor;
-                    numeric.ForeColor = TextColor;
-                    numeric.Font = new Font("맑은 고딕", 9F);
+                    UiTheme.StyleNumeric(numeric);
                 }
 
                 if (control.HasChildren)
@@ -218,21 +738,10 @@ namespace UrlOverlayManager
             if (dgvItems == null)
                 return;
 
-            dgvItems.BackgroundColor = AppBackColor;
-            dgvItems.BorderStyle = BorderStyle.None;
-            dgvItems.EnableHeadersVisualStyles = false;
-            dgvItems.ColumnHeadersDefaultCellStyle.BackColor = PanelBackColor;
-            dgvItems.ColumnHeadersDefaultCellStyle.ForeColor = TextColor;
-            dgvItems.ColumnHeadersDefaultCellStyle.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
-            dgvItems.ColumnHeadersDefaultCellStyle.SelectionBackColor = PanelBackColor;
-            dgvItems.DefaultCellStyle.BackColor = FieldBackColor;
-            dgvItems.DefaultCellStyle.ForeColor = TextColor;
-            dgvItems.DefaultCellStyle.SelectionBackColor = AccentDarkColor;
-            dgvItems.DefaultCellStyle.SelectionForeColor = Color.White;
-            dgvItems.DefaultCellStyle.Font = new Font("맑은 고딕", 9F);
-            dgvItems.RowHeadersVisible = false;
-            dgvItems.GridColor = Color.FromArgb(196, 224, 238);
-            dgvItems.AllowUserToResizeRows = false;
+            UiTheme.StyleGrid(dgvItems);
+            dgvItems.AllowUserToResizeColumns = false;
+            dgvItems.RowTemplate.Height = 42;
+            dgvItems.ColumnHeadersHeight = 28;
         }
 
         private void InitTrayIcon()
@@ -270,7 +779,7 @@ namespace UrlOverlayManager
             trayMenu.Items.Add(menuItem);
         }
 
-        private void ShowMainForm()
+        public void ShowMainForm()
         {
             Show();
 
@@ -281,6 +790,7 @@ namespace UrlOverlayManager
 
             Activate();
             BringToFront();
+            SetForegroundWindow(Handle);
         }
 
         private void HideAllOverlays()
@@ -405,8 +915,17 @@ namespace UrlOverlayManager
             SaveConfig();
         }
 
-        private void ExitApplication()
+        public void ExitApplication()
         {
+            PrepareForApplicationExit();
+            Application.Exit();
+        }
+
+        public void PrepareForApplicationExit()
+        {
+            if (isRealExit)
+                return;
+
             isRealExit = true;
             SaveConfig();
             UnregisterHotkeys();
@@ -415,15 +934,18 @@ namespace UrlOverlayManager
             {
                 trayIcon.Visible = false;
                 trayIcon.Dispose();
+                trayIcon = null;
             }
 
             foreach (OverlayForm form in new List<OverlayForm>(overlayForms.Values))
             {
-                form.Close();
+                if (!form.IsDisposed)
+                {
+                    form.Close();
+                }
             }
 
             overlayForms.Clear();
-            Application.Exit();
         }
 
         private void InitEditorEvents()
@@ -444,6 +966,24 @@ namespace UrlOverlayManager
         {
             SaveConfig();
 
+            if (!useTrayIntegration)
+            {
+                if (preserveOverlaysOnClose && !isRealExit)
+                {
+                    e.Cancel = true;
+                    Hide();
+                    return;
+                }
+
+                foreach (OverlayForm form in new List<OverlayForm>(overlayForms.Values))
+                {
+                    form.Close();
+                }
+
+                overlayForms.Clear();
+                return;
+            }
+
             if (!isRealExit)
             {
                 e.Cancel = true;
@@ -460,6 +1000,12 @@ namespace UrlOverlayManager
 
         private void Form1_Resize(object? sender, EventArgs e)
         {
+            LayoutTitleBar();
+            LayoutMainControls();
+
+            if (!useTrayIntegration)
+                return;
+
             if (WindowState == FormWindowState.Minimized)
             {
                 Hide();
@@ -560,6 +1106,16 @@ namespace UrlOverlayManager
             dgvItems.AllowUserToAddRows = false;
             dgvItems.AllowUserToDeleteRows = false;
             dgvItems.ReadOnly = true;
+            dgvItems.RowTemplate.Height = 42;
+            dgvItems.ColumnHeadersHeight = 28;
+            dgvItems.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            dgvItems.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
+            dgvItems.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
+            dgvItems.AdvancedCellBorderStyle.Left = DataGridViewAdvancedCellBorderStyle.None;
+            dgvItems.AdvancedCellBorderStyle.Right = DataGridViewAdvancedCellBorderStyle.None;
+            dgvItems.AdvancedCellBorderStyle.Top = DataGridViewAdvancedCellBorderStyle.None;
+            dgvItems.AdvancedCellBorderStyle.Bottom = DataGridViewAdvancedCellBorderStyle.Single;
+            dgvItems.CellClick += dgvItems_CellClick;
             dgvItems.Columns.Clear();
 
             dgvItems.Columns.Add(new DataGridViewCheckBoxColumn
@@ -623,6 +1179,33 @@ namespace UrlOverlayManager
             RefreshGrid();
             selectedItem = item;
             SelectItem(item);
+
+            BeginInvoke(new Action(() => SelectGridItem(item)));
+            SaveConfig();
+        }
+
+        private void AddClockOverlay()
+        {
+            Rectangle workingArea = Screen.FromControl(this).WorkingArea;
+
+            OverlayItemConfig item = new OverlayItemConfig
+            {
+                Name = "시계",
+                Url = ClockOverlayContent.Url,
+                Visible = true,
+                ClickThrough = false,
+                Opacity = 1.0,
+                Width = 420,
+                Height = 120,
+                X = workingArea.Left + 80,
+                Y = workingArea.Top + 80
+            };
+
+            items.Add(item);
+            RefreshGrid();
+            selectedItem = item;
+            SelectItem(item);
+            ShowOverlay(item);
 
             BeginInvoke(new Action(() => SelectGridItem(item)));
             SaveConfig();
@@ -726,9 +1309,45 @@ namespace UrlOverlayManager
             }
         }
 
+        private void dgvItems_CellClick(object? sender, DataGridViewCellEventArgs e)
+        {
+            if (isRefreshingGrid || isLoadingItem)
+                return;
+
+            if (e.RowIndex < 0 || e.ColumnIndex != 0)
+                return;
+
+            DataGridViewRow row = dgvItems.Rows[e.RowIndex];
+
+            if (row.IsNewRow)
+                return;
+
+            if (row.DataBoundItem is not OverlayItemConfig item)
+                return;
+
+            item.Visible = !item.Visible;
+
+            if (item.Visible)
+            {
+                ShowOverlay(item);
+            }
+            else
+            {
+                HideOverlay(item);
+            }
+
+            if (selectedItem == null || selectedItem.Id == item.Id)
+            {
+                selectedItem = item;
+                SyncSelectedEditorChecks();
+            }
+
+            dgvItems.Refresh();
+            SaveConfig();
+        }
+
         private void SelectItem(OverlayItemConfig item)
         {
-            Size = new Size(550, 400);
             isLoadingItem = true;
 
             try

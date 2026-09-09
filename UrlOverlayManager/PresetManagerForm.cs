@@ -20,36 +20,66 @@ namespace UrlOverlayManager
             ResultPresets = ClonePresets(presets);
             this.currentItems = currentItems;
 
-            Text = "프리셋 관리";
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            ClientSize = new Size(460, 310);
-            BackColor = Color.FromArgb(30, 30, 30);
-            ForeColor = Color.White;
-
-            InitControls();
+            InitializeForm();
+            BuildLayout();
+            UiChrome.Apply(this, "프리셋 관리", false);
             RefreshList();
         }
 
-        private void InitControls()
+        private void InitializeForm()
         {
-            Label nameLabel = CreateLabel("프리셋 이름");
-            nameLabel.Location = new Point(16, 17);
-            nameLabel.Size = new Size(90, 24);
+            Text = "프리셋 관리";
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.None;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(540, 390);
+            BackColor = UiTheme.AppBackColor;
+            ForeColor = UiTheme.TextColor;
+            Font = UiTheme.RegularFont();
+        }
 
-            txtName.Location = new Point(112, 16);
-            txtName.Size = new Size(316, 23);
-            txtName.BackColor = Color.FromArgb(45, 45, 48);
-            txtName.ForeColor = Color.White;
-            txtName.BorderStyle = BorderStyle.FixedSingle;
+        private void BuildLayout()
+        {
+            TableLayoutPanel root = new TableLayoutPanel();
+            root.Dock = DockStyle.Fill;
+            root.Padding = new Padding(22);
+            root.ColumnCount = 1;
+            root.RowCount = 5;
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 
-            lstPresets.Location = new Point(16, 52);
-            lstPresets.Size = new Size(412, 160);
-            lstPresets.BackColor = Color.FromArgb(37, 37, 38);
-            lstPresets.ForeColor = Color.White;
+            Label title = new Label();
+            title.Text = "프리셋 관리";
+            title.Dock = DockStyle.Fill;
+            title.Font = UiTheme.BoldFont(17F);
+            title.TextAlign = ContentAlignment.MiddleLeft;
+
+            TableLayoutPanel nameRow = new TableLayoutPanel();
+            nameRow.Dock = DockStyle.Fill;
+            nameRow.ColumnCount = 2;
+            nameRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+            nameRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+            Label nameLabel = new Label();
+            nameLabel.Text = "프리셋 이름";
+            nameLabel.Dock = DockStyle.Fill;
+            nameLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+            txtName.Dock = DockStyle.Fill;
+            UiTheme.StyleTextBox(txtName);
+
+            nameRow.Controls.Add(nameLabel, 0, 0);
+            nameRow.Controls.Add(txtName, 1, 0);
+
+            lstPresets.Dock = DockStyle.Fill;
+            lstPresets.BackColor = UiTheme.PanelBackColor;
+            lstPresets.ForeColor = UiTheme.TextColor;
             lstPresets.BorderStyle = BorderStyle.FixedSingle;
+            lstPresets.Font = UiTheme.RegularFont(10F);
             lstPresets.SelectedIndexChanged += (s, e) =>
             {
                 if (lstPresets.SelectedItem is PresetConfig preset)
@@ -58,59 +88,61 @@ namespace UrlOverlayManager
                 }
             };
 
-            Button saveButton = CreateButton("현재 설정 저장", 16, 224, 128);
+            FlowLayoutPanel actionRow = new FlowLayoutPanel();
+            actionRow.Dock = DockStyle.Fill;
+            actionRow.WrapContents = false;
+
+            Button saveButton = CreateButton("현재 설정 저장", 132, UiTheme.AccentColor, Color.White);
             saveButton.Click += SaveButton_Click;
 
-            Button applyButton = CreateButton("적용", 150, 224, 82);
+            Button applyButton = CreateButton("적용", 86, UiTheme.PanelBackColor, UiTheme.TextColor);
             applyButton.Click += ApplyButton_Click;
 
-            Button deleteButton = CreateButton("삭제", 238, 224, 82);
-            deleteButton.BackColor = Color.FromArgb(185, 74, 72);
+            Button deleteButton = CreateButton("삭제", 86, UiTheme.DangerColor, Color.White);
             deleteButton.Click += DeleteButton_Click;
 
-            Button closeButton = CreateButton("닫기", 346, 260, 82);
+            actionRow.Controls.Add(saveButton);
+            actionRow.Controls.Add(applyButton);
+            actionRow.Controls.Add(deleteButton);
+
+            FlowLayoutPanel bottom = new FlowLayoutPanel();
+            bottom.Dock = DockStyle.Fill;
+            bottom.FlowDirection = FlowDirection.RightToLeft;
+            bottom.WrapContents = false;
+
+            Button closeButton = CreateButton("닫기", 86, UiTheme.AccentColor, Color.White);
             closeButton.Click += (s, e) =>
             {
                 DialogResult = DialogResult.OK;
                 Close();
             };
 
-            Label hintLabel = CreateLabel("같은 이름으로 저장하면 기존 프리셋을 덮어씁니다.");
-            hintLabel.Location = new Point(16, 260);
-            hintLabel.Size = new Size(300, 30);
-            hintLabel.ForeColor = Color.FromArgb(210, 210, 210);
+            Label hintLabel = new Label();
+            hintLabel.Text = "같은 이름으로 저장하면 기존 프리셋을 덮어씁니다.";
+            hintLabel.AutoSize = false;
+            hintLabel.Size = new Size(360, 32);
+            hintLabel.TextAlign = ContentAlignment.MiddleLeft;
+            hintLabel.ForeColor = UiTheme.MutedTextColor;
 
-            Controls.Add(nameLabel);
-            Controls.Add(txtName);
-            Controls.Add(lstPresets);
-            Controls.Add(saveButton);
-            Controls.Add(applyButton);
-            Controls.Add(deleteButton);
-            Controls.Add(hintLabel);
-            Controls.Add(closeButton);
+            bottom.Controls.Add(closeButton);
+            bottom.Controls.Add(hintLabel);
+
+            root.Controls.Add(title, 0, 0);
+            root.Controls.Add(nameRow, 0, 1);
+            root.Controls.Add(lstPresets, 0, 2);
+            root.Controls.Add(actionRow, 0, 3);
+            root.Controls.Add(bottom, 0, 4);
+
+            Controls.Add(root);
         }
 
-        private static Label CreateLabel(string text)
-        {
-            Label label = new Label();
-            label.Text = text;
-            label.TextAlign = ContentAlignment.MiddleLeft;
-            label.ForeColor = Color.FromArgb(230, 230, 230);
-            label.Font = new Font("맑은 고딕", 9F);
-            return label;
-        }
-
-        private static Button CreateButton(string text, int x, int y, int width)
+        private static Button CreateButton(string text, int width, Color backColor, Color foreColor)
         {
             Button button = new Button();
             button.Text = text;
-            button.Location = new Point(x, y);
-            button.Size = new Size(width, 30);
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 0;
-            button.BackColor = Color.FromArgb(58, 122, 254);
-            button.ForeColor = Color.White;
-            button.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
+            button.Width = width;
+            button.Margin = new Padding(0, 0, 8, 8);
+            UiTheme.StyleButton(button, backColor, foreColor);
             return button;
         }
 
@@ -120,7 +152,7 @@ namespace UrlOverlayManager
 
             if (string.IsNullOrWhiteSpace(name))
             {
-                MessageBox.Show("프리셋 이름을 입력하세요.");
+                MessageBox.Show(this, "프리셋 이름을 입력하세요.", "프리셋 저장");
                 return;
             }
 
@@ -130,6 +162,7 @@ namespace UrlOverlayManager
             if (existingIndex >= 0)
             {
                 DialogResult result = MessageBox.Show(
+                    this,
                     "같은 이름의 프리셋이 있습니다. 덮어쓰시겠습니까?",
                     "프리셋 저장",
                     MessageBoxButtons.YesNo
@@ -154,7 +187,7 @@ namespace UrlOverlayManager
         {
             if (lstPresets.SelectedItem is not PresetConfig preset)
             {
-                MessageBox.Show("적용할 프리셋을 선택하세요.");
+                MessageBox.Show(this, "적용할 프리셋을 선택하세요.", "프리셋 적용");
                 return;
             }
 
@@ -167,11 +200,12 @@ namespace UrlOverlayManager
         {
             if (lstPresets.SelectedItem is not PresetConfig preset)
             {
-                MessageBox.Show("삭제할 프리셋을 선택하세요.");
+                MessageBox.Show(this, "삭제할 프리셋을 선택하세요.", "프리셋 삭제");
                 return;
             }
 
             DialogResult result = MessageBox.Show(
+                this,
                 "선택한 프리셋을 삭제하시겠습니까?",
                 "프리셋 삭제",
                 MessageBoxButtons.YesNo

@@ -17,6 +17,7 @@ namespace UrlOverlayManager
         private Button btnClose = null!;
         private System.Windows.Forms.Timer hoverTimer = null!;
         private readonly List<Panel> resizeHandles = new List<Panel>();
+        private bool editChromeVisible;
         private const int MOVE_PANEL_HEIGHT = 28;
 
         private string currentUrl = "";
@@ -59,7 +60,7 @@ namespace UrlOverlayManager
 
         private void InitOverlayForm()
         {
-            this.Text = config.Name;
+            this.Text = BuildWindowTitle();
 
             this.StartPosition = FormStartPosition.Manual;
 
@@ -81,6 +82,7 @@ namespace UrlOverlayManager
 
             this.MinimumSize = new Size(150, 100);
             this.FormBorderStyle = FormBorderStyle.None;
+            SetStyle(ControlStyles.ResizeRedraw, true);
         }
         protected override void OnShown(EventArgs e)
         {
@@ -144,8 +146,8 @@ namespace UrlOverlayManager
 
             this.Controls.Add(movePanel);
             movePanel.BringToFront();
-
             InitResizeHandles();
+
 
             // 마우스 위치 감지용 타이머
             hoverTimer = new System.Windows.Forms.Timer();
@@ -169,20 +171,17 @@ namespace UrlOverlayManager
             // 클릭무시 상태에서는 이동바를 절대 표시하지 않음
             if (config.ClickThrough)
             {
-                movePanel.Visible = false;
-                SetResizeHandlesVisible(false);
+                HideEditChrome();
                 return;
             }
 
             // 현재 마우스 위치가 이 오버레이 창 안에 있는지 확인
             bool mouseInside = this.Bounds.Contains(Cursor.Position);
 
-            movePanel.Visible = mouseInside;
-
-            if (movePanel.Visible)
-                movePanel.BringToFront();
-
-            SetResizeHandlesVisible(mouseInside);
+            if (mouseInside)
+                ShowEditChrome();
+            else
+                HideEditChrome();
         }
 
         private void InitResizeHandles()
@@ -197,7 +196,6 @@ namespace UrlOverlayManager
             AddResizeHandle(HTBOTTOMRIGHT, Cursors.SizeNWSE);
 
             UpdateResizeHandleBounds();
-            SetResizeHandlesVisible(false);
         }
 
         private void AddResizeHandle(int hitTestValue, Cursor cursor)
@@ -205,7 +203,7 @@ namespace UrlOverlayManager
             Panel handle = new Panel();
             handle.Tag = hitTestValue;
             handle.Cursor = cursor;
-            handle.BackColor = Color.FromArgb(166, 211, 232);
+            handle.BackColor = Color.Transparent;
             handle.Visible = false;
             handle.MouseDown += ResizeHandle_MouseDown;
 
@@ -254,25 +252,88 @@ namespace UrlOverlayManager
             movePanel?.BringToFront();
         }
 
-        private void SetResizeHandlesVisible(bool visible)
+        private void ShowEditChrome()
         {
-            bool shouldShow = visible && !config.ClickThrough;
+            if (config.ClickThrough)
+            {
+                HideEditChrome(detachControls: true);
+                return;
+            }
+
+            EnsureEditChromeAttached();
+
+            if (editChromeVisible)
+                return;
+
+            movePanel.Visible = true;
+            movePanel.BringToFront();
+
+            UpdateResizeHandleBounds();
 
             foreach (Panel handle in resizeHandles)
             {
-                handle.Visible = shouldShow;
-
-                if (shouldShow)
-                    handle.BringToFront();
+                handle.Visible = true;
+                handle.BringToFront();
             }
 
-            if (movePanel != null && movePanel.Visible)
-                movePanel.BringToFront();
+            movePanel.BringToFront();
+            editChromeVisible = true;
+            Invalidate();
+        }
+
+        private void HideEditChrome(bool detachControls = false)
+        {
+            if (movePanel != null)
+            {
+                movePanel.Visible = false;
+            }
+
+            foreach (Panel handle in resizeHandles)
+            {
+                handle.Visible = false;
+            }
+
+            editChromeVisible = false;
+            Invalidate();
+
+            if (detachControls)
+                DetachEditChrome();
+        }
+
+        private void EnsureEditChromeAttached()
+        {
+            if (movePanel != null && !Controls.Contains(movePanel))
+            {
+                Controls.Add(movePanel);
+            }
+
+            foreach (Panel handle in resizeHandles)
+            {
+                if (!Controls.Contains(handle))
+                    Controls.Add(handle);
+            }
+        }
+
+        private void DetachEditChrome()
+        {
+            if (movePanel != null && Controls.Contains(movePanel))
+            {
+                Controls.Remove(movePanel);
+            }
+
+            foreach (Panel handle in resizeHandles)
+            {
+                if (Controls.Contains(handle))
+                    Controls.Remove(handle);
+            }
         }
 
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
+
+            if (config.ClickThrough)
+                return;
 
             if (m.Msg == WM_NCHITTEST && (int)m.Result == HTCLIENT)
             {
@@ -305,6 +366,19 @@ namespace UrlOverlayManager
                     m.Result = (IntPtr)HTBOTTOM;
             }
         }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            if (!editChromeVisible || config.ClickThrough)
+                return;
+
+            using Pen borderPen = new Pen(Color.FromArgb(116, 174, 207), 2F);
+            Rectangle border = new Rectangle(1, 1, ClientSize.Width - 3, ClientSize.Height - 3);
+            e.Graphics.DrawRectangle(borderPen, border);
+        }
+
         private async void OverlayForm_Load(object? sender, EventArgs e)
         {
             await webView.EnsureCoreWebView2Async();
@@ -329,6 +403,13 @@ namespace UrlOverlayManager
                 return;
 
             currentUrl = targetUrl;
+
+            if (ClockOverlayContent.IsClockUrl(targetUrl))
+            {
+                webView.NavigateToString(ClockOverlayContent.CreateHtml());
+                return;
+            }
+
             webView.CoreWebView2.Navigate(targetUrl);
         }
 
@@ -370,22 +451,23 @@ namespace UrlOverlayManager
 
             if (enabled)
             {
+                HideEditChrome(detachControls: true);
+
                 exStyle |= WS_EX_LAYERED;
                 exStyle |= WS_EX_TRANSPARENT;
-                if (movePanel != null)
-                    movePanel.Visible = false;
-                SetResizeHandlesVisible(false);
             }
             else
             {
                 exStyle &= ~WS_EX_TRANSPARENT;
+                EnsureEditChromeAttached();
             }
 
             SetWindowLong(this.Handle, GWL_EXSTYLE, exStyle);
+            Refresh();
         }
         public void ApplyConfig()
         {
-            this.Text = config.Name;
+            this.Text = BuildWindowTitle();
             this.Opacity = config.Opacity;
             this.TopMost = true;
 
@@ -407,12 +489,27 @@ namespace UrlOverlayManager
                 Navigate();
             }
         }
+        private string BuildWindowTitle()
+        {
+            string displayName = string.IsNullOrWhiteSpace(config.Name) ? "이름 없음" : config.Name.Trim();
+            return "UrlOverlayManager Web Overlay " + config.Id.ToString("N") + " - " + displayName;
+        }
+
         private string NormalizeUrl(string url)
         {
             string targetUrl = url.Trim();
 
             if (string.IsNullOrWhiteSpace(targetUrl))
                 return "";
+
+            if (ClockOverlayContent.IsClockUrl(targetUrl))
+                return ClockOverlayContent.Url;
+
+            if (targetUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+                return targetUrl;
+
+            if (System.IO.Path.IsPathFullyQualified(targetUrl) && System.IO.File.Exists(targetUrl))
+                return new Uri(targetUrl).AbsoluteUri;
 
             if (!targetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
                 !targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))

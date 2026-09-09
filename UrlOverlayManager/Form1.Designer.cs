@@ -39,6 +39,7 @@
             chkClickThrough = new CheckBox();
             name = new Label();
             url = new Label();
+            opacity = new Label();
             ((System.ComponentModel.ISupportInitialize)dgvItems).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numOpacity).BeginInit();
             SuspendLayout();
@@ -143,11 +144,21 @@
             url.TabIndex = 10;
             url.Text = "URL";
             // 
+            // opacity
+            // 
+            opacity.AutoSize = true;
+            opacity.Location = new Point(31, 298);
+            opacity.Name = "opacity";
+            opacity.Size = new Size(43, 15);
+            opacity.TabIndex = 11;
+            opacity.Text = "투명도";
+            // 
             // Form1
             // 
             AutoScaleMode = AutoScaleMode.None;
             BackColor = SystemColors.ActiveCaption;
             ClientSize = new Size(534, 226);
+            Controls.Add(opacity);
             Controls.Add(url);
             Controls.Add(name);
             Controls.Add(chkClickThrough);
@@ -183,5 +194,6 @@
         private CheckBox chkClickThrough;
         private Label name;
         private Label url;
+        private Label opacity;
     }
 }
